@@ -4,7 +4,8 @@
   "description": "Api de gerenciamento do Make Your Burger",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node --env-file .env src/index.js"
   },
   "author": "Fabiano Teixeira Lages",
   "license": "ISC",
@@ -12,5 +13,6 @@
     "body-parser": "^1.20.2",
     "express": "^4.19.2",
     "mongoose": "^8.5.1"
-  }
+  },
+  "github": "https://github.com/fabio-lages/apiburger"
 }
