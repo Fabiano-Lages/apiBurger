@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
 require("../config/db");
 const carne = require('../models/carne');
 const pao = require('../models/pao');
@@ -18,8 +19,13 @@ const Usuario = mongoose.model('usuarios');
 router.post('/login', async(req, res) => {
     const usuario = await Usuario.findOne({login: req.body.login});
     if(usuario) {
-        if(senha == req.body.senha) {
-
+        if(verificaSenha(senha, req.body.senha)) {
+            res.json({
+                login: usuario.login,
+                nome: ususario.nome,
+                email: usuario.email,
+                token: novoToken(usuario)
+            });
         } else {
             res.josn({Erro: "Usuário ou Senha incorreta"});
         }
@@ -27,6 +33,19 @@ router.post('/login', async(req, res) => {
         res.josn({Erro: "Usuário ou Senha incorreta"});
     }
 });
+
+const criarHash = (senha) => {
+    const saltos = 10;
+    return(bcrypt.hashSync(senha, saltos));
+}
+
+const verificaSenha = async (senha, hash) => {
+    return(await bcrypt.compare(senha, hash));
+}
+
+const novoToken = (usuario) => {
+    return("token");
+}
 
 router.get('/carne', async (req, res) => {
     res.json(await carregaCarne());
