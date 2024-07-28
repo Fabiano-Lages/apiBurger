@@ -9,6 +9,8 @@ const status = require('../models/status');
 const pedido = require('../models/pedido');
 const usuario = require('../models/usuario');
 
+const { autoriza: auth, logados } = require("../midleware/auth");
+
 const Carne = mongoose.model('carnes');
 const Pao = mongoose.model('paes');
 const Opcional = mongoose.model('opcionais');
@@ -19,39 +21,124 @@ const Usuario = mongoose.model('usuarios');
 router.post('/login', async(req, res) => {
     const usuario = await Usuario.findOne({login: req.body.login});
     if(usuario) {
-        if(verificaSenha(senha, req.body.senha)) {
-            res.json({
-                login: usuario.login,
-                nome: ususario.nome,
-                email: usuario.email,
-                token: novoToken(usuario)
-            });
+        const verifica = await verificaSenha(req.body.senha, usuario.senha);
+        if(verifica) {
+            const obj = {login: usuario.login, nome: usuario.nome, email: usuario.email, validade: new Date()};
+            obj.validade.setMinutes(obj.validade.getMinutes() + 15);
+            obj.token = criarHash(usuario._id.toString())
+            logados.push(obj);
+            res.json({token: obj.token});
         } else {
-            res.josn({Erro: "Usuário ou Senha incorreta"});
+            res.json({Erro: "Usuário ou Senha incorreta"});
         }
     } else {
-        res.josn({Erro: "Usuário ou Senha incorreta"});
+        res.json({Erro: "Usuário ou Senha incorreta"});
     }
 });
+
+router.get('/logout/:login', auth, async(req, res) => {
+    const posicao = logados.findIndex(item => item.login == req.params.login);
+    if(posicao > -1) {
+        logados.splice(posicao, 1);
+        res.json({msg: "Deslogado"});
+    } else {
+        res.json({Erro: "Usuário não logado"});
+    }
+});
+
+router.post('/usuario', auth, async (req, res) => {
+    const id = req.body.id;
+    if(!id) {
+        const existe = await Usuario.findOne(
+            {
+                $or: [
+                    { login: req.body.login },
+                    { name: req.body.name },
+                    { email: req.body.email }
+                ]
+            }
+        );
+
+        if(!existe) {
+            const novo = new Usuario({
+                login: req.body.login,
+                nome: req.body.nome,
+                email: req.body.email,
+                senha: criarHash(req.body.senha)
+            });
+        
+            if(req.body.foto) {
+                novo.foto = req.body.foto;
+            }
+            novo.save();    
+            res.json(novo);
+        } else {
+            console.log(existe);
+            res.json({Erro: "Nome de usuário, login ou e-mail ja existe"});
+        }
+    }
+});
+
+router.get('/usuario', auth, async (req, res) => {
+    const lst = await Usuario.find();
+    if(lst) {
+        const resposta = [];
+        lst.forEach(element => {
+            resposta.push({
+                id: element._id,
+                login: element.login,
+                nome: element.nome,
+                email: element.email,
+                foto: element.foto
+            });
+        });
+        res.json(resposta);
+    } else {
+        res.json({Erro: "Nenhum usuário encontrado"});
+    }
+});
+
+router.put('/usuario', auth, async (req, res) => {
+    
+});
+
+router.delete('/usuario/:id', auth, (req, res) => {
+    const usuario = Usuario.findOne({id: req.params.id});
+
+    Usuario.deleteOne({id: req.params.id})
+        .then(() => {
+            res.redirect("/usuario");
+        })
+        .catch((err) => {
+            console.log(`Erro ao apagar o usuário ${req.params.id}. ${err}`);
+            res.redirect("/usuario");
+        });
+    }
+);
+
+const expiraLogados = () => {
+    for(let i = 0; i < logados.length; i++) {
+        if(Date.now() > logados[i].validade) {
+            logados.splice(i, 1);
+        }
+    }
+};
+
 
 const criarHash = (senha) => {
     const saltos = 10;
     return(bcrypt.hashSync(senha, saltos));
 }
 
-const verificaSenha = async (senha, hash) => {
-    return(await bcrypt.compare(senha, hash));
+const verificaSenha = (senha, hash) => {
+    return(bcrypt.compare(senha, hash));
 }
 
-const novoToken = (usuario) => {
-    return("token");
-}
-
-router.get('/carne', async (req, res) => {
+router.get('/carne', auth, async (_, res) => {
     res.json(await carregaCarne());
 });
 
-router.get('/carne/:id', async (req, res) => {
+router.get('/carne/:id', auth, async (req, res) => {
     res.json(await carregaCarne(req.params.id));
 });
 
@@ -59,7 +146,7 @@ const carregaCarne = async (id = 0) => {
     return(await buscaLista("carne", id));
 };
 
-router.post('/carne', async (req, res) => {
+router.post('/carne', auth, async (req, res) => {
     const id = req.body.id;
     if(!id) {
         const novo = new Carne(req.body);
@@ -74,7 +161,7 @@ router.post('/carne', async (req, res) => {
     }
 });
 
-router.put('/carne/:id', async (req, res) => {
+router.put('/carne/:id', auth, async (req, res) => {
     const id = req.body.id;
     if(!id) {
         const reg = await Carne.findOneAndUpdate(
@@ -91,7 +178,7 @@ router.put('/carne/:id', async (req, res) => {
     }
 });
 
-router.delete('/carne/:id', (req, res) => {
+router.delete('/carne/:id', auth, (req, res) => {
     Carne.deleteOne({id: req.params.id})
         .then(() => {
             res.redirect("/carne");
@@ -103,11 +190,11 @@ router.delete('/carne/:id', (req, res) => {
     }
 );
 
-router.get('/pao/:id', async (req, res) => {
+router.get('/pao', auth, async (_, res) => {
     res.json(await carregaPao());
 });
 
-router.get('/pao/:id', async (req, res) => {
+router.get('/pao/:id', auth, async (req, res) => {
     res.json(await carregaPao(req.params.id));
 });
 
@@ -115,7 +202,7 @@ const carregaPao = async (id = 0) => {
     return(await buscaLista("pao", id));
 };
 
-router.post('/pao', async (req, res) => {
+router.post('/pao', auth, async (req, res) => {
     const id = req.body.id;
     if(!id) {
         const novo = new Pao(req.body);
@@ -130,7 +217,7 @@ router.post('/pao', async (req, res) => {
     }
 });
 
-router.delete('/pao/:id', (req, res) => {
+router.delete('/pao/:id', auth, (req, res) => {
     Carne.deleteOne({id: req.params.id})
         .then(() => {
             res.redirect("/pao");
@@ -142,11 +229,11 @@ router.delete('/pao/:id', (req, res) => {
     }
 );
 
-router.get('/opcionais', async (req, res) => {
+router.get('/opcionais', auth, async (_, res) => {
     res.json(await carregaOpcional());
 });
 
-router.get('/opcionais/:id', async (req, res) => {
+router.get('/opcionais/:id', auth, async (req, res) => {
     res.json(await carregaOpcional(req.params.id));
 });
 
@@ -154,7 +241,7 @@ const carregaOpcional = async (id = 0) => {
     return(await buscaLista("opcionais", id));
 };
 
-router.post('/opcionais', async (req, res) => {
+router.post('/opcionais', auth, async (req, res) => {
     const id = req.body.id;
     if(!id) {
         const novo = new Opcional(req.body);
@@ -169,7 +256,7 @@ router.post('/opcionais', async (req, res) => {
     }
 });
 
-router.delete('/opcionais/:id', (req, res) => {
+router.delete('/opcionais/:id', auth, (req, res) => {
     Opcional.deleteOne({id: req.params.id})
         .then(() => {
             res.redirect("/opcionais");
@@ -181,11 +268,11 @@ router.delete('/opcionais/:id', (req, res) => {
     }
 );
 
-router.get('/status', async (req, res) => {
+router.get('/status', async (_, res) => {
     res.json(await carregaStatus());
 });
 
-router.get('/status/:id', async (req, res) => {
+router.get('/status/:id', auth, async (req, res) => {
     res.json(await carregaStatus(req.params.id));
 });
 
@@ -193,7 +280,7 @@ const carregaStatus = async (id = 0) => {
     return(await buscaLista("status", id));
 };
 
-router.post('/status', async (req, res) => {
+router.post('/status', auth, async (req, res) => {
     const id = req.body.id;
     if(!id) {
         const novo = new Status(req.body);
@@ -208,7 +295,7 @@ router.post('/status', async (req, res) => {
     }
 });
 
-router.delete('/status/:id', (req, res) => {
+router.delete('/status/:id', auth, (req, res) => {
     Status.deleteOne({id: req.params.id})
         .then(() => {
             res.redirect("/status");
@@ -220,7 +307,7 @@ router.delete('/status/:id', (req, res) => {
     }
 );
 
-router.get("/ingredientes", async (req, res) => {
+router.get("/ingredientes", async (_, res) => {
     const obj = {
         paes: await buscaLista("pao"), 
         carnes: await buscaLista("carne"), 
@@ -230,7 +317,7 @@ router.get("/ingredientes", async (req, res) => {
     res.json(obj);
 });
 
-router.get("/pedido", async (req, res) => {
+router.get("/pedido", auth, async (_, res) => {
     const pedidos = await Pedido.find();
     const lst = [];
 
@@ -242,7 +329,7 @@ router.get("/pedido", async (req, res) => {
     res.json(lst);
 });
 
-router.get("/pedido/:id", async (req, res) => {
+router.get("/pedido/:id", auth, async (req, res) => {
     const pedido = await Pedido.findOne({id:req.params.id});
     let obj = null;
     if(pedido) {
@@ -289,7 +376,7 @@ router.post("/pedido", async (req, res) => {
     }
 });
 
-router.put("/pedido/:id", async (req, res) => {
+router.put("/pedido/:id", auth, async (req, res) => {
     const id = req.params.id;
     if(id) {
         const pedido = await Pedido.findOneAndUpdate({id: id}, req.body);
@@ -297,7 +384,7 @@ router.put("/pedido/:id", async (req, res) => {
     }
 });
 
-router.patch("/pedido/:id", async (req, res) => {
+router.patch("/pedido/:id", auth, async (req, res) => {
     const id = req.params.id;
 
     if(id) {
@@ -307,7 +394,7 @@ router.patch("/pedido/:id", async (req, res) => {
     }
 });
 
-router.delete("/pedido/:id", async (req, res) => {
+router.delete("/pedido/:id", auth, async (req, res) => {
     const id = req.params.id;
     if(id) {
         const pedido = await Pedido.findOneAndDelete({id: id});
@@ -370,5 +457,7 @@ const buscaLista = async (tipo, id = 0) => {
 
     return(lista);
 };
+
+setInterval(expiraLogados, 60000);
 
 module.exports = { router };

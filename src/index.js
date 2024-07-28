@@ -1,8 +1,7 @@
 const express = require("express");
 const cors = require('cors');
 const bodyParser = require("body-parser");
-const routes = require("./router");
-const porta = Number(process.env.VUE_APP_API_PORTA);
+const routes = require("./router");const porta = Number(process.env.VUE_APP_API_PORTA);
 const app = express(); 
 
 app.use(bodyParser.urlencoded({extended:false}));
