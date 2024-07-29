@@ -21,7 +21,7 @@ const Usuario = mongoose.model('usuarios');
 router.post('/login', async(req, res) => {
     const usuario = await Usuario.findOne({login: req.body.login});
     if(usuario) {
-        const verifica = await verificaSenha(req.body.senha, usuario.senha);
+        const verifica = await verificaHash(req.body.senha, usuario.senha);
         if(verifica) {
             const obj = {login: usuario.login, nome: usuario.nome, email: usuario.email, validade: new Date()};
             obj.validade.setMinutes(obj.validade.getMinutes() + 15);
@@ -47,14 +47,15 @@ router.get('/logout/:login', auth, async(req, res) => {
 });
 
 router.post('/usuario', auth, async (req, res) => {
-    const id = req.body.id;
-    if(!id) {
+    const {nome, login, email} = req.body;
+
+    if(nome && login && email) {
         const existe = await Usuario.findOne(
             {
                 $or: [
-                    { login: req.body.login },
-                    { name: req.body.name },
-                    { email: req.body.email }
+                    { login },
+                    { nome },
+                    { email }
                 ]
             }
         );
@@ -76,6 +77,8 @@ router.post('/usuario', auth, async (req, res) => {
             console.log(existe);
             res.json({Erro: "Nome de usuário, login ou e-mail ja existe"});
         }
+    } else {
+        res.json({Erro: "Nome de usuário, login ou e-mail são obrigatórios"});
     }
 });
 
@@ -98,23 +101,64 @@ router.get('/usuario', auth, async (req, res) => {
     }
 });
 
-router.put('/usuario', auth, async (req, res) => {
-    
+router.put('/usuario/:id', auth, async (req, res) => {
+    const reg = await Usuario.findOneAndUpdate(
+        {_id: id},
+        {
+            nome: req.body.nome,
+            login: req.body.login,
+            nome: req.body.nome,
+            email: req.body.email,
+            foto: req.body.foto,
+            modified: Date.now()
+        },
+        {new: true}
+    );
+
+    if(reg) {
+        res.json({id:reg.id, tipo: reg.tipo});
+    } else {
+        res.json({id:-1, tipo: "Carnes não encontradas."});
+    }
 });
 
-router.delete('/usuario/:id', auth, (req, res) => {
-    const usuario = Usuario.findOne({id: req.params.id});
+router.patch('/usuario/:id', auth, async (req, res) => {
+    const reg = await Usuario.findOneAndUpdate(
+        {_id: id},
+        {
+            ...req.body,
+            modified: Date.now()
+        },
+        {new: true}
+    );
 
-    Usuario.deleteOne({id: req.params.id})
-        .then(() => {
-            res.redirect("/usuario");
-        })
-        .catch((err) => {
-            console.log(`Erro ao apagar o usuário ${req.params.id}. ${err}`);
-            res.redirect("/usuario");
-        });
+    if(reg) {
+        res.json({id:reg.id, tipo: reg.tipo});
+    } else {
+        res.json({id:-1, tipo: "Carnes não encontradas."});
     }
-);
+});
+
+router.delete('/usuario/:id', auth, async (req, res) => {
+    const usuario = await Usuario.findOne({_id: req.params.id});
+    if(usuario) {
+        const corrente = await verificaHash(req.params.id, req.headers['authorization'].split(' ')[1]);
+        if(!corrente) {
+            Usuario.deleteOne({_id: req.params.id})
+                .then(() => {
+                    res.redirect("/usuario");
+                })
+                .catch((err) => {
+                    console.log(`Erro ao apagar o usuário ${req.params.id}. ${err}`);
+                    res.redirect("/usuario");
+                });
+        } else {
+            res.json({'Erro': 'Não é possível apagar o usuário logado'});
+        }
+    } else {
+        res.json({'Erro': 'Usuário não encontreado'});
+    }
+});
 
 const expiraLogados = () => {
     for(let i = 0; i < logados.length; i++) {
@@ -124,14 +168,13 @@ const expiraLogados = () => {
     }
 };
 
-
 const criarHash = (senha) => {
     const saltos = 10;
     return(bcrypt.hashSync(senha, saltos));
 }
 
-const verificaSenha = (senha, hash) => {
-    return(bcrypt.compare(senha, hash));
+const verificaHash = (valor, hash) => {
+    return(bcrypt.compare(valor, hash));
 }
 
 router.get('/carne', auth, async (_, res) => {
@@ -158,24 +201,13 @@ router.post('/carne', auth, async (req, res) => {
         }
         novo.save();    
         res.json(novo);
+    } else {
+        res.json({Erro: "O ID é definido pelo banco."});
     }
 });
 
 router.put('/carne/:id', auth, async (req, res) => {
-    const id = req.body.id;
-    if(!id) {
-        const reg = await Carne.findOneAndUpdate(
-                {id: req.params.id},
-                {tipo: req.body.tipo},
-                {new: true}
-        );
-
-        if(reg) {
-            res.json({id:reg.id, tipo: reg.tipo});
-        } else {
-            res.json({id:-1, tipo: "Carnes não encontradas."});
-        }
-    }
+    atualizaItemLista("carne", req.params.id, req, res);
 });
 
 router.delete('/carne/:id', auth, (req, res) => {
@@ -217,8 +249,12 @@ router.post('/pao', auth, async (req, res) => {
     }
 });
 
+router.put('/pao/:id', auth, async (req, res) => {
+    atualizaItemLista("pao", req.params.id, req, res);
+});
+
 router.delete('/pao/:id', auth, (req, res) => {
-    Carne.deleteOne({id: req.params.id})
+    Pao.deleteOne({id: req.params.id})
         .then(() => {
             res.redirect("/pao");
         })
@@ -254,6 +290,10 @@ router.post('/opcionais', auth, async (req, res) => {
         novo.save();    
         res.json(novo);
     }
+});
+
+router.put('/opcionais/:id', auth, async (req, res) => {
+    atualizaItemLista("opcionais", req.params.id, req, res);
 });
 
 router.delete('/opcionais/:id', auth, (req, res) => {
@@ -293,6 +333,10 @@ router.post('/status', auth, async (req, res) => {
         novo.save();    
         res.json(novo);
     }
+});
+
+router.put('/status/:id', auth, async (req, res) => {
+    atualizaItemLista("status", req.params.id, req, res);
 });
 
 router.delete('/status/:id', auth, (req, res) => {
@@ -377,29 +421,23 @@ router.post("/pedido", async (req, res) => {
 });
 
 router.put("/pedido/:id", auth, async (req, res) => {
-    const id = req.params.id;
-    if(id) {
-        const pedido = await Pedido.findOneAndUpdate({id: id}, req.body);
-        res.json(montaObjPedido(pedido));
-    }
+    const pedido = await Pedido.findOneAndUpdate({id: id}, req.body);
+    res.json(montaObjPedido(pedido));
 });
 
 router.patch("/pedido/:id", auth, async (req, res) => {
-    const id = req.params.id;
-
-    if(id) {
-        const status = await Status.findOne({id: req.body.status});
+    const status = await Status.findOne({id: req.body.status});
+    if(status) {
         const pedido = await Pedido.findOneAndUpdate({id: id}, {status: status._id});
         res.json(montaObjPedido(pedido));
+    } else {
+        res.json({Erro: "Status inexistente."});
     }
 });
 
 router.delete("/pedido/:id", auth, async (req, res) => {
-    const id = req.params.id;
-    if(id) {
-        const pedido = await Pedido.findOneAndDelete({id: id});
-        res.json(montaObjPedido(pedido));
-    }
+    const pedido = await Pedido.findOneAndDelete({id: id});
+    res.json(montaObjPedido(pedido));
 });
 
 const montaObjPedido = async (pedido) => {
@@ -456,6 +494,31 @@ const buscaLista = async (tipo, id = 0) => {
     }
 
     return(lista);
+};
+
+const atualizaItemLista = async (tipo, id, req, res) => {
+    let rst;
+    const filtro = { id };
+    switch(tipo) {
+        case "carne":
+            rst = await Carne.findOneAndUpdate(filtro, { tipo: req.body.tipo }, {new: true});
+            break;
+        case "pao":
+            rst = await Pao.findOneAndUpdate(filtro, { tipo: req.body.tipo }, {new: true});
+            break;
+        case "opcionais":
+            rst = await Opcional.findOneAndUpdate(filtro, { tipo: req.body.tipo }, {new: true});
+            break;
+        case "status":
+            rst = await Status.findOneAndUpdate(filtro, { tipo: req.body.tipo }, {new: true});
+            break;
+    }
+
+    if(rst) {
+        rst.json({id:rst.id, tipo: rst.tipo});
+    } else {
+        rst.json({Erro: `${tipo} não encontrado.`});
+    }
 };
 
 setInterval(expiraLogados, 60000);
